@@ -18,10 +18,9 @@ if not openai_api_key or not tavily_api_key:
     st.error("⚠️ 缺少 API Key，請檢查 secrets.toml")
     st.stop()
 
-# --- CSS 美化 (Updated with Scroll to Top button) ---
+# --- CSS 美化 ---
 st.markdown("""
 <style>
-/* Streamlit 頁面主要樣式 */
 div[data-testid="stExpander"] details summary p {
     font-size: 1.1rem;
     font-weight: 600;
@@ -31,18 +30,15 @@ div[data-testid="stExpander"] details summary p {
 div[data-testid="stButton"] button p {
     font-weight: bold;
 }
-
-/* 確保整個頁面可以平滑捲動 */
 html {
     scroll-behavior: smooth;
 }
-
 /* Scroll to Top Button Style (Fixed Position) */
 .scroll-to-top-btn {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background-color: #1a1a1f; /* A darker shade for contrast */
+    background-color: #1a1a1f; 
     color: white;
     border: none;
     border-radius: 50%;
@@ -52,8 +48,8 @@ html {
     text-align: center;
     line-height: 45px;
     font-size: 20px;
-    z-index: 10000; /* Ensure it's on top */
-    box-shadow: 0 4px 10px rgba[0, 0, 0, 0.4];
+    z-index: 10000; 
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
     opacity: 0.7;
     transition: opacity 0.3s;
 }
@@ -69,7 +65,7 @@ html {
 
 # --- 初始化 Session State ---
 if "messages" not in st.session_state: 
-    st.session_state.messages = [{"role": "assistant", "content": "我是您的臨床助手。請輸入病名開始查詢。", "id": "init_msg"}]
+    st.session_state.messages = [{"role": "assistant", "content": "我是您的臨床助手。請輸入病名開始查詢。"}]
 if "history" not in st.session_state: 
     st.session_state.history = []
 if "msg_counter" not in st.session_state:
@@ -83,23 +79,11 @@ def get_new_id():
 # 📱 主畫面控制台
 # ==========================================
 
-target_disease = st.text_input("請輸入病名/症狀", placeholder="請輸入病名 (例如: 敗血症, 副甲狀腺腫大)...", label_visibility="collapsed", key="target_input")
+# 1. 病名輸入區
+target_disease = st.text_input("請輸入病名/症狀", placeholder="請輸入病名 (中英文皆可, 例如: Sepsis, 敗血症)...", label_visibility="collapsed", key="target_input")
 
+# 2. 四大快捷鍵
 c1, c2, c3, c4 = st.columns(4)
-
-# --- 核心邏輯：建立共通的「強制英文搜尋」指令 ---
-def create_global_search_prompt(chinese_disease, required_action):
-    # 這是所有快捷鍵的基底指令
-    
-    # 將病名翻譯成英文，確保搜尋品質
-    # 注意：這裡的 Prompt 已經將「強制翻譯」寫死在 Agent 的 System Prompt 裡
-    
-    base_prompt = (
-        f"請搜尋 [{chinese_disease}] 的最新國際指引。\n"
-        f"要求：{required_action}\n"
-        f"回答語言：繁體中文。"
-    )
-    return base_prompt
 
 # [Btn 1] 診斷標準
 with c1:
@@ -107,12 +91,16 @@ with c1:
         if not target_disease:
             st.warning("請先輸入病名 👆")
         else:
-            action = (
-                f"請整理：1. **評分系統**：畫出表格 + MDCalc 連結。2. **確診條件**。3. **資料來源**：附上 URL。"
-            )
             st.session_state.trigger = {
                 "label": f"🔍 查詢 [{target_disease}] 診斷標準",
-                "query": create_global_search_prompt(target_disease, action)
+                "query": (
+                    f"請搜尋最新的 [{target_disease}] 診斷指引。\n"
+                    f"請整理：\n"
+                    f"1. **評分系統**：表格 + MDCalc 連結。\n"
+                    f"2. **確診條件**。\n"
+                    f"3. **資料來源**：附上 URL。\n"
+                    f"回答語言：繁體中文。"
+                )
             }
             st.rerun()
 
@@ -122,13 +110,13 @@ with c2:
         if not target_disease:
             st.warning("請先輸入病名 👆")
         else:
-            action = (
-                f"列出建議安排的檢查項目 (Workup)。\n"
-                f"整理為：1. **血液/生化檢查** (醫學名詞優先使用英文全名與縮寫，括號內附中文解釋)。2. **影像/ECG** (附 Radiopaedia/LITFL 連結)。"
-            )
             st.session_state.trigger = {
-                "label": f"🔬 查詢 [{target_disease}] 實驗室檢查建議",
-                "query": create_global_search_prompt(target_disease, action)
+                "label": f"🔬 查詢 [{target_disease}] 完整檢查建議",
+                "query": (
+                    f"請針對疑似 [{target_disease}] 的病人，列出建議安排的完整檢查。\n"
+                    f"分為：1. 血液/生化 2. 影像/ECG (附 Radiopaedia/LITFL 連結)。\n"
+                    f"回答語言：繁體中文。"
+                )
             }
             st.rerun()
 
@@ -138,12 +126,15 @@ with c3:
         if not target_disease:
             st.warning("請先輸入病名 👆")
         else:
-            action = (
-                f"整理出：1. **藥物治療清單**：English Generic Name、精確劑量、頻率。2. **急性期治療目標 (Goals)**：數值與時間窗。"
-            )
             st.session_state.trigger = {
                 "label": f"💊 查詢 [{target_disease}] 治療藥物與目標",
-                "query": create_global_search_prompt(target_disease, action)
+                "query": (
+                    f"請搜尋最新的 [{target_disease}] 治療指引。\n"
+                    f"整理出：\n"
+                    f"1. **藥物治療**：English Generic Name、精確劑量、頻率。\n"
+                    f"2. **治療目標**：數值與時間窗。\n"
+                    f"回答語言：繁體中文。"
+                )
             }
             st.rerun()
 
@@ -153,12 +144,13 @@ with c4:
         if not target_disease:
             st.warning("請先輸入病名 👆")
         else:
-            action = (
-                f"列出 [{target_disease}] 的危險徵兆 (Red Flags)。"
-            )
             st.session_state.trigger = {
                 "label": f"⚠️ 查詢 [{target_disease}] 危險徵兆",
-                "query": create_global_search_prompt(target_disease, action)
+                "query": (
+                    f"請列出 [{target_disease}] 的危險徵兆 (Red Flags)。\n"
+                    f"文末務必附上參考來源連結。\n"
+                    f"回答語言：繁體中文。"
+                )
             }
             st.rerun()
 
@@ -206,44 +198,39 @@ with st.expander("🧮 腎功能劑量調整 (Calculator)", expanded=False):
         elif not indication_input:
             st.warning("請輸入適應症！")
         else:
-            prompt = (
-                f"請進行腎功能劑量調整查詢。\n"
-                f"藥物：**{target_drug}**。\n"
-                f"適應症：**{indication_input}**。\n"
-                f"病人參數：**Cr {cr} mg/dL, CrCl {crcl} ml/min**。\n\n"
-                f"請搜尋權威資料 (Sanford, Lexicomp, FDA Label)，回答：\n"
-                f"1. **標準劑量**。\n"
-                f"2. **此病人建議劑量 (Adjusted Dose)**：針對 CrCl {crcl} 的具體建議。\n"
-                f"3. 資料來源連結 (URL)。\n"
-                f"請整理成表格。說明文字用繁體中文。"
-            )
             st.session_state.trigger = {
                 "label": f"🧮 計算 [{target_drug}] 腎功能調整劑量 (CrCl {crcl})",
-                "query": prompt
+                "query": (
+                    f"請進行腎功能劑量調整查詢。\n"
+                    f"藥物：**{target_drug}**。\n"
+                    f"適應症：**{indication_input}**。\n"
+                    f"病人參數：**Cr {cr} mg/dL, CrCl {crcl} ml/min**。\n\n"
+                    f"請搜尋權威資料 (Sanford, Lexicomp)，回答：\n"
+                    f"1. **標準劑量**。\n"
+                    f"2. **此病人建議劑量 (Adjusted Dose)**：針對 CrCl {crcl} 的具體建議。\n"
+                    f"3. 資料來源連結 (URL)。\n"
+                    f"請整理成表格。說明文字用繁體中文。"
+                )
             }
             st.rerun()
 
 st.divider()
 
 # ==========================================
-# 💬 對話與結果區
+# 💬 對話與結果區 (Scrollable)
 # ==========================================
 chat_container = st.container(height=500, border=True)
 
 with chat_container:
     for msg in st.session_state.messages:
-        # 1. 埋樁：建立一個空的 div，id 為該訊息的 id
         if "id" in msg:
             st.markdown(f"<div id='{msg['id']}'></div>", unsafe_allow_html=True)
-        # 2. 顯示訊息
         st.chat_message(msg["role"]).write(msg["content"])
 
-user_input_text = st.chat_input("輸入問題...")
-
-# --- 核心邏輯：執行與快取 ---
 final_label = ""
 final_query = ""
 scroll_target_id = None
+is_new_query = False # 新增標誌，判斷是否為新查詢
 
 if "trigger" in st.session_state:
     trigger_data = st.session_state.trigger
@@ -252,43 +239,34 @@ if "trigger" in st.session_state:
         final_label = trigger_data["label"]
         final_query = trigger_data["query"]
         
-        # --- 智慧判斷：是否已經在畫面上？ (History Click Logic) ---
-        # 檢查目前所有訊息，是否有一則的 content 和 user query 相同 (且 ID 相同，以確保精準度)
-        existing_msg = next((m for m in st.session_state.messages if m.get("content") == final_label and m.get("role") == "user" and m.get("id") == trigger_data.get("id")), None)
+        existing_msg = next((m for m in st.session_state.messages if m.get("content") == final_label and m.get("role") == "user"), None)
         
         if existing_msg:
-            # 🎯 找到了！直接滑過去，不呼叫 AI
             scroll_target_id = existing_msg["id"]
-            final_query = "" # 清空 query，這樣就不會觸發下方的 AI 執行
-            final_label = "" # 清空 label，避免重複顯示
+            final_query = "" 
+            final_label = "" 
+            st.session_state.messages[-1] = existing_msg
         else:
-            # 如果是新的 Trigger (來自按鈕)，則生成新 ID
-            scroll_target_id = get_new_id()
-
+            is_new_query = True
+    
     del st.session_state.trigger
 
-elif user_input_text:
-    final_label = user_input_text 
-    final_query = user_input_text
-    scroll_target_id = get_new_id() # 新問題生成新 ID
-
-# 如果還有 final_query，代表是新問題 (或找不到舊紀錄)
 if final_query:
-    history_item = {"label": final_label, "query": final_query, "id": scroll_target_id}
-    
-    # 確保不會重複加入歷史紀錄 (只在 query 不同時才加入)
+    new_id = get_new_id()
+    scroll_target_id = new_id
+    is_new_query = True # 確保是新查詢
+
+    history_item = {"label": final_label, "query": final_query, "id": new_id}
     if not st.session_state.history or st.session_state.history[-1]["query"] != final_query:
         st.session_state.history.append(history_item)
 
-    st.session_state.messages.append({"role": "user", "content": final_label, "id": scroll_target_id})
+    st.session_state.messages.append({"role": "user", "content": final_label, "id": new_id})
     
     with chat_container:
-        # 新問題當場也要埋樁，不然滑不到
-        st.markdown(f"<div id='{scroll_target_id}'></div>", unsafe_allow_html=True)
+        st.markdown(f"<div id='{new_id}'></div>", unsafe_allow_html=True)
         st.chat_message("user").write(final_label)
         
         with st.chat_message("assistant"):
-            # 檢查是否有歷史 Response (針對已清除對話但歷史紀錄還在的情況)
             cached_history = next((h for h in st.session_state.history if h["query"] == final_query), None)
             
             if cached_history and "response" in cached_history:
@@ -301,17 +279,16 @@ if final_query:
                 llm = ChatOpenAI(model_name="gpt-4o", temperature=0, openai_api_key=openai_api_key)
                 tools = [TavilySearchResults(tavily_api_key=tavily_api_key, max_results=5)]
                 
-                # --- System Prompt: 最終國際化指令 (v30.0) ---
                 system_prompt = (
                     "你是專業醫師助手 Dr. AI。\n"
                     "核心指令：\n"
                     "1. **國際化搜尋**：若使用者提問中含有中文病名，你必須將其翻譯成最精確的英文醫學術語，並優先使用該英文術語搜尋**國際權威學會或指引** (ESC, AHA, GINA, AACE, KDIGO...) 的最新資料，以確保資訊品質。\n"
-                    "2. **醫學名詞呈現**：在列出檢驗項目時，優先使用**英文全名與縮寫**，並在括號內附上**繁體中文解釋** (例如: 'Parathyroid Hormone (PTH) (副甲狀腺素)')。\n"
+                    "2. **醫學名詞呈現**：在列出檢驗項目時，優先使用**英文全名與縮寫**，並在括號內附上**繁體中文解釋** (例如: 'Parathyroid Hormone (PTH) (副甲狀腺素)'，避免簡體字)。\n"
                     "3. **藥名**：用 English Generic Name。\n"
                     "4. **劑量**：必須精確 (Specific)。\n"
                     "5. **評分系統**：畫表格 + MDCalc 連結。\n"
                     "6. **資料來源**：務必附上 URL。\n"
-                    "7. **最終回答語言**：**嚴格使用繁體中文**，避免任何簡體字。"
+                    "7. **最終回答**：使用繁體中文。"
                 )
                 
                 prompt_template = ChatPromptTemplate.from_messages([
@@ -328,7 +305,6 @@ if final_query:
                     final_ans = response["output"]
                     st.write(final_ans)
                     
-                    # 補回 Response 到歷史紀錄，供未來快取使用
                     if st.session_state.history and st.session_state.history[-1]["query"] == final_query:
                         st.session_state.history[-1]["response"] = final_ans
                         
@@ -336,21 +312,24 @@ if final_query:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# --- JavaScript 執行區 (修正版：穿透 iframe，通用滑動邏輯) ---
-if scroll_target_id: # 確保有目標 ID 才執行
-    js = f"""
+# --- JavaScript 執行區 (最終滑動邏輯) ---
+if scroll_target_id:
+    # 判斷是新查詢還是歷史紀錄點擊
+    delay_ms = 1000 if is_new_query else 100 
+
+    js_code = f"""
     <script>
         function scroll_to_target() {{
             var target = window.parent.document.getElementById('{scroll_target_id}');
             if (target) {{
-                target.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+                target.scrollIntoView({{behavior: 'smooth', block: 'start'}}); 
             }}
         }}
-        // 延遲一點點執行，確保 DOM 已經渲染完畢
-        setTimeout(scroll_to_target, 100);
+        // 新查詢延遲 1000ms 確保 AI 內容渲染完畢
+        setTimeout(scroll_to_target, {delay_ms}); 
     </script>
     """
-    components.html(js, height=0)
+    components.html(js_code, height=0)
 
 # --- 側邊欄：歷史紀錄 ---
 with st.sidebar:
@@ -358,13 +337,10 @@ with st.sidebar:
     if st.button("🗑️ 清除紀錄", use_container_width=True):
         st.session_state.history = []
         st.session_state.messages = [{"role": "assistant", "content": "我是您的臨床助手。", "id": "init_msg"}]
-        st.session_state.msg_counter = 0 # 重設訊息計數器
+        st.session_state.msg_counter = 0 
         st.rerun()
     
     for i, item in enumerate(reversed(st.session_state.history)):
-        # 使用 item["id"] 確保點擊歷史紀錄能滑動到正確位置
         if st.button(item["label"], key=f"hist_{i}"):
-            # 直接設定 trigger，觸發上方邏輯，但如果已存在則不會再次執行 AI
-            st.session_state.trigger = item 
-            st.rerun() # 重新運行以觸發顯示和滑動
-
+            st.session_state.trigger = item
+            st.rerun()
