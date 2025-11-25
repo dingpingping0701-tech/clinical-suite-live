@@ -79,10 +79,10 @@ def get_new_id():
 # 📱 主畫面控制台
 # ==========================================
 
-# 1. 病名輸入 (主畫面)
+# 1. 病名輸入
 target_disease = st.text_input("請輸入病名/症狀", placeholder="請輸入病名 (中英文皆可, 例如: Sepsis)...", label_visibility="collapsed", key="target_input")
 
-# 2. 四大快捷鍵 (主畫面)
+# 2. 四大快捷鍵
 c1, c2, c3, c4 = st.columns(4)
 
 def handle_button_click(label_template, query_template):
@@ -96,41 +96,45 @@ def handle_button_click(label_template, query_template):
         }
         st.rerun()
 
+# [Btn 1] 診斷 Guideline (更名)
 with c1:
-    if st.button("🩺 診斷標準", use_container_width=True):
-        q = "請搜尋最新的 [{}] 診斷指引。\n請整理：1. **評分系統**：表格 + MDCalc 連結。2. **確診條件**。3. **資料來源**：附上 URL。\n回答語言：繁體中文。"
-        handle_button_click("🔍 查詢 [{}] 診斷標準", q)
+    if st.button("🩺 診斷 Guideline", use_container_width=True):
+        q = "請搜尋最新的 [{}] 診斷指引。\n請整理：1. **評分系統**：表格 + MDCalc 連結 (若無確切連結，請提供 Google 搜尋連結)。2. **確診條件**。3. **資料來源**：附上 URL。\n回答語言：繁體中文。"
+        handle_button_click("🔍 查詢 [{}] 診斷 Guideline", q)
 
+# [Btn 2] 實驗室檢查
 with c2:
     if st.button("🧪 實驗室檢查", use_container_width=True):
         q = "請針對疑似 [{}] 的病人，列出建議安排的檢查項目 (Workup)。\n整理為：1. **血液/生化檢查** (醫學名詞優先使用英文全名與縮寫，括號內附中文解釋)。2. **影像/ECG** (附 Radiopaedia/LITFL 連結)。"
         handle_button_click("🔬 查詢 [{}] 完整檢查建議", q)
 
+# [Btn 3] 治療與目標
 with c3:
     if st.button("💊 治療與目標", use_container_width=True):
         q = "請搜尋最新的 [{}] 治療指引。\n整理出：1. **藥物治療清單**：English Generic Name、精確劑量、頻率。2. **急性期治療目標 (Goals)**：數值與時間窗。\n回答語言：繁體中文。"
         handle_button_click("💊 查詢 [{}] 治療藥物與目標", q)
 
+# [Btn 4] 危險徵兆
 with c4:
     if st.button("⚠️ 危險徵兆", use_container_width=True):
         q = "請列出 [{}] 的危險徵兆 (Red Flags)。\n文末務必附上參考來源連結。\n回答語言：繁體中文。"
         handle_button_click("⚠️ 查詢 [{}] 危險徵兆", q)
 
-# 3. 腎功能計算機 (主畫面)
-with st.expander("🧮 腎功能劑量調整 (Calculator)", expanded=False):
+# 3. 藥物劑量資訊 (更名)
+with st.expander("💊 藥物劑量資訊 (Dosing Info)", expanded=False):
     st.caption("1. 設定藥物與適應症")
     target_drug = st.text_input("指定藥物 (必填)", placeholder="例如: Meropenem")
     indication_input = st.text_input("適應症 (Indication)", placeholder="例如: HAP")
 
     st.markdown("---")
-    st.caption("2. 輸入病人數據")
+    st.caption("2. 輸入病人數據 (用於腎功能校正)")
     col_calc1, col_calc2 = st.columns(2)
     with col_calc1:
-        age = st.number_input("Age", 65, step=1)
+        age = st.number_input("Age", min_value=1, value=65, step=1)
         gender = st.selectbox("Sex", ["Male", "Female"])
     with col_calc2:
-        wt = st.number_input("Wt(kg)", 60.0, step=1.0)
-        cr = st.number_input("Cr", 1.0, step=0.1)
+        wt = st.number_input("Wt(kg)", min_value=1.0, value=60.0, step=1.0)
+        cr = st.number_input("Cr", min_value=0.01, value=1.0, step=0.1)
     
     crcl = 0
     if cr > 0:
@@ -141,16 +145,35 @@ with st.expander("🧮 腎功能劑量調整 (Calculator)", expanded=False):
         elif crcl < 60: st.warning(f"⚠️ CrCl: {crcl} ml/min")
         else: st.success(f"✅ CrCl: {crcl} ml/min")
     
-    if st.button("🚀 計算調整後劑量", use_container_width=True, type="primary"):
+    if st.button("🚀 查詢劑量與建議", use_container_width=True, type="primary"):
         if not target_drug:
             st.warning("請輸入藥物名稱！")
         elif not indication_input:
             st.warning("請輸入適應症！")
         else:
-            q = f"請進行腎功能劑量調整查詢。\n藥物：**{target_drug}**。\n適應症：**{indication_input}**。\n病人參數：**Cr {cr} mg/dL, CrCl {crcl} ml/min**。\n\n請搜尋權威資料，回答：1. **標準劑量**。2. **此病人建議劑量 (Adjusted Dose)**：針對 CrCl {crcl} 的具體建議。3. 資料來源連結。\n請整理成表格。說明文字用繁體中文。"
+            # Prompt 保持安全檢查邏輯
+            q = (
+                f"請進行臨床藥物審查與劑量建議。\n"
+                f"藥物：**{target_drug}**。\n"
+                f"適應症：**{indication_input}**。\n"
+                f"病人參數：**Cr {cr} mg/dL, CrCl {crcl} ml/min**。\n\n"
+                f"請執行以下步驟：\n"
+                f"1. **適應症檢核 (Indication Check)**：判斷 {target_drug} 是否為 {indication_input} 的指引建議用藥？\n"
+                f"   - **若否 (Not Indicated)**：\n"
+                f"     a. 請明確輸出「⚠️ **警示：此藥物並非該適應症的常規用藥**」並說明原因。\n"
+                f"     b. **重要：請列出該適應症的 2-3 種『建議替代用藥 (Alternative First-line Agents)』**，並附上標準劑量與頻率表格。\n"
+                f"   - **若是 (Indicated)**：請繼續執行下一步。\n"
+                f"2. **劑量計算與禁忌症** (僅在符合適應症時執行)：\n"
+                f"   - 若此腎功能 ({crcl} ml/min) 為 **禁忌症 (Contraindicated)**，請用紅色粗體標示。\n"
+                f"   - 若需調整，請列出標準劑量 vs 調整後劑量。\n"
+                f"3. **輸出格式**：Markdown 表格。\n"
+                f"4. 資料來源連結。\n"
+                f"回答語言：繁體中文。"
+            )
+            
             st.session_state.trigger_action = {
                 "type": "new_search",
-                "label": f"🧮 計算 [{target_drug}] 腎功能調整劑量 (CrCl {crcl})",
+                "label": f"💊 查詢 [{target_drug}] 劑量資訊 (CrCl {crcl})",
                 "query": q
             }
             st.rerun()
@@ -224,6 +247,7 @@ if should_run_api and final_query:
                 llm = ChatOpenAI(model_name="gpt-4o", temperature=0, openai_api_key=openai_api_key)
                 tools = [TavilySearchResults(tavily_api_key=tavily_api_key, max_results=5)]
                 
+                # --- System Prompt: 最終安全連結指令 (Safe Linking) ---
                 system_prompt = (
                     "你是專業醫師助手 Dr. AI。\n"
                     "核心指令：\n"
@@ -231,7 +255,9 @@ if should_run_api and final_query:
                     "2. **醫學名詞**：優先用英文全名/縮寫 + 繁體中文解釋 (避免簡體)。\n"
                     "3. **藥名**：一律用 English Generic Name。\n"
                     "4. **劑量**：精確數值。\n"
-                    "5. **連結**：MDCalc/Radiopaedia/LITFL + 來源 URL。\n"
+                    "5. **連結策略**：\n"
+                    "   - MDCalc/Radiopaedia/LITFL：若不確定真實 URL，請提供 Google 搜尋 URL (例如: ) 以確保連結有效。\n"
+                    "   - 指引來源：務必附上 URL。\n"
                 )
                 
                 prompt_template = ChatPromptTemplate.from_messages([
@@ -248,9 +274,7 @@ if should_run_api and final_query:
                     final_ans = response["output"]
                     st.write(final_ans)
                     
-                    # API 完成後，確保歷史紀錄被正確加入 (新查詢且無重複時)
                     new_history_item = {"label": final_label, "query": final_query, "response": final_ans, "id": new_id}
-                    # 檢查最後一筆是否相同，若不同才加入
                     if not st.session_state.history or st.session_state.history[-1]["query"] != final_query:
                         st.session_state.history.append(new_history_item)
                         
@@ -272,9 +296,7 @@ if scroll_target_id:
     """
     components.html(js, height=0)
 
-# ==========================================
-# 側邊欄：歷史紀錄 (移到最下方)
-# ==========================================
+# --- 側邊欄：歷史紀錄 ---
 with st.sidebar:
     st.header("🕒 歷史紀錄")
     if st.button("🗑️ 清除紀錄", use_container_width=True):
@@ -283,13 +305,10 @@ with st.sidebar:
         st.session_state.msg_counter = 0 
         st.rerun()
     
-    if not st.session_state.history:
-        st.caption("尚無搜尋紀錄")
-    else:
-        for i, item in enumerate(reversed(st.session_state.history)):
-            if st.button(item["label"], key=f"hist_{i}"):
-                st.session_state.trigger_action = {
-                    "type": "history_click",
-                    "id": item.get("id")
-                }
-                st.rerun()
+    for i, item in enumerate(reversed(st.session_state.history)):
+        if st.button(item["label"], key=f"hist_{i}"):
+            st.session_state.trigger_action = {
+                "type": "history_click",
+                "id": item.get("id")
+            }
+            st.rerun()
