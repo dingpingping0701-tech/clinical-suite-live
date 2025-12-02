@@ -63,7 +63,7 @@ html {
 <a href="#top_anchor" class="float-btn" target="_self">▲</a>
 """, unsafe_allow_html=True)
 
-# --- 初始化 Session State ---
+# --- 初始化 Session State (純記憶體模式，不讀檔) ---
 if "messages" not in st.session_state: 
     st.session_state.messages = [{"role": "assistant", "content": "我是您的臨床助手。請輸入病名開始查詢。", "id": "init_msg"}]
 if "history" not in st.session_state: 
@@ -79,60 +79,67 @@ def get_new_id():
 # 📱 主畫面控制台
 # ==========================================
 
-# 1. 病名輸入
-target_disease = st.text_input("請輸入病名/症狀", placeholder="請輸入病名 (中英文皆可, 例如: Sepsis)...", label_visibility="collapsed", key="target_input")
+target_disease = st.text_input("請輸入病名/症狀", placeholder="請輸入病名 (中英文皆可)...", label_visibility="collapsed", key="target_input")
 
-# 2. 四大快捷鍵
-c1, c2, c3, c4 = st.columns(4)
-
-def handle_button_click(label_template, query_template):
+# --- 定義按鈕邏輯 ---
+def handle_button_click(label_tmpl, query_tmpl):
     if not target_disease:
         st.warning("請先輸入病名 👆")
     else:
+        # 直接寫入 Trigger，不做任何 Cache 檢查，強制視為新搜尋
         st.session_state.trigger_action = {
             "type": "new_search",
-            "label": label_template.format(target_disease),
-            "query": query_template.format(target_disease)
+            "label": label_tmpl.format(target_disease),
+            "query": query_tmpl.format(target_disease)
         }
         st.rerun()
 
-# [Btn 1] 診斷 Guideline (更名)
+# --- 第一排按鈕 ---
+c1, c2, c3 = st.columns(3)
+
 with c1:
     if st.button("🩺 診斷 Guideline", use_container_width=True):
-        q = "請搜尋最新的 [{}] 診斷指引。\n請整理：1. **評分系統**：表格 + MDCalc 連結 (若無確切連結，請提供 Google 搜尋連結)。2. **確診條件**。3. **資料來源**：附上 URL。\n回答語言：繁體中文。"
+        q = "請搜尋最新的 [{}] 診斷指引。\n請整理：1. **評分系統**：表格 + MDCalc 連結。2. **確診條件**。3. **資料來源**：附上 URL。\n回答語言：繁體中文。"
         handle_button_click("🔍 查詢 [{}] 診斷 Guideline", q)
 
-# [Btn 2] 實驗室檢查
 with c2:
     if st.button("🧪 實驗室檢查", use_container_width=True):
-        q = "請針對疑似 [{}] 的病人，列出建議安排的檢查項目 (Workup)。\n整理為：1. **血液/生化檢查** (醫學名詞優先使用英文全名與縮寫，括號內附中文解釋)。2. **影像/ECG** (附 Radiopaedia/LITFL 連結)。"
+        q = "請針對疑似 [{}] 的病人，列出建議安排的檢查項目 (Workup)。\n整理為：1. **血液/生化檢查**。2. **影像/ECG** (附 Radiopaedia/LITFL 連結)。\n3. **資料來源**：附上 URL。"
         handle_button_click("🔬 查詢 [{}] 完整檢查建議", q)
 
-# [Btn 3] 治療與目標
 with c3:
     if st.button("💊 治療與目標", use_container_width=True):
-        q = "請搜尋最新的 [{}] 治療指引。\n整理出：1. **藥物治療清單**：English Generic Name、精確劑量、頻率。2. **急性期治療目標 (Goals)**：數值與時間窗。\n回答語言：繁體中文。"
+        q = "請搜尋最新的 [{}] 治療指引。\n整理出：1. **藥物治療清單**：English Generic Name、精確劑量、頻率。2. **急性期治療目標 (Goals)**：數值與時間窗。\n3. **資料來源**：附上 URL。\n回答語言：繁體中文。"
         handle_button_click("💊 查詢 [{}] 治療藥物與目標", q)
 
-# [Btn 4] 危險徵兆
+# --- 第二排按鈕 ---
+c4, c5 = st.columns(2)
+
 with c4:
     if st.button("⚠️ 危險徵兆", use_container_width=True):
-        q = "請列出 [{}] 的危險徵兆 (Red Flags)。\n文末務必附上參考來源連結。\n回答語言：繁體中文。"
+        q = "請列出 [{}] 的危險徵兆 (Red Flags)。\n文末務必附上參考來源連結 (URL)。\n回答語言：繁體中文。"
         handle_button_click("⚠️ 查詢 [{}] 危險徵兆", q)
 
-# 3. 藥物劑量資訊 (更名)
+with c5:
+    if st.button("✋ 身體理學檢查 (PE)", use_container_width=True):
+        q = "請針對疑似 [{}] 的病人，列出重點身體理學檢查 (Physical Examination)。\n請整理：\n1. **視診 (Inspection)**。\n2. **聽診/觸診 (Auscultation/Palpation)**。\n3. **特殊檢查 (Special Maneuvers)**：(e.g. Murphy's sign, McBurney's point)，並附上敏感度/特異度。\n4. **資料來源**：務必附上參考連結 (URL)。\n回答語言：繁體中文。"
+        handle_button_click("✋ 查詢 [{}] PE 重點", q)
+
+# ==========================================
+# 🧮 腎功能劑量調整
+# ==========================================
 with st.expander("💊 藥物劑量資訊 (Dosing Info)", expanded=False):
     st.caption("1. 設定藥物與適應症")
     target_drug = st.text_input("指定藥物 (必填)", placeholder="例如: Meropenem")
     indication_input = st.text_input("適應症 (Indication)", placeholder="例如: HAP")
 
     st.markdown("---")
-    st.caption("2. 輸入病人數據 (用於腎功能校正)")
-    col_calc1, col_calc2 = st.columns(2)
-    with col_calc1:
+    st.caption("2. 輸入病人數據")
+    cc1, cc2 = st.columns(2)
+    with cc1:
         age = st.number_input("Age", min_value=1, value=65, step=1)
         gender = st.selectbox("Sex", ["Male", "Female"])
-    with col_calc2:
+    with cc2:
         wt = st.number_input("Wt(kg)", min_value=1.0, value=60.0, step=1.0)
         cr = st.number_input("Cr", min_value=0.01, value=1.0, step=0.1)
     
@@ -151,26 +158,13 @@ with st.expander("💊 藥物劑量資訊 (Dosing Info)", expanded=False):
         elif not indication_input:
             st.warning("請輸入適應症！")
         else:
-            # Prompt 保持安全檢查邏輯
             q = (
-                f"請進行臨床藥物審查與劑量建議。\n"
-                f"藥物：**{target_drug}**。\n"
-                f"適應症：**{indication_input}**。\n"
+                f"請進行臨床藥物審查與劑量建議。\n藥物：**{target_drug}**。\n適應症：**{indication_input}**。\n"
                 f"病人參數：**Cr {cr} mg/dL, CrCl {crcl} ml/min**。\n\n"
-                f"請執行以下步驟：\n"
-                f"1. **適應症檢核 (Indication Check)**：判斷 {target_drug} 是否為 {indication_input} 的指引建議用藥？\n"
-                f"   - **若否 (Not Indicated)**：\n"
-                f"     a. 請明確輸出「⚠️ **警示：此藥物並非該適應症的常規用藥**」並說明原因。\n"
-                f"     b. **重要：請列出該適應症的 2-3 種『建議替代用藥 (Alternative First-line Agents)』**，並附上標準劑量與頻率表格。\n"
-                f"   - **若是 (Indicated)**：請繼續執行下一步。\n"
-                f"2. **劑量計算與禁忌症** (僅在符合適應症時執行)：\n"
-                f"   - 若此腎功能 ({crcl} ml/min) 為 **禁忌症 (Contraindicated)**，請用紅色粗體標示。\n"
-                f"   - 若需調整，請列出標準劑量 vs 調整後劑量。\n"
-                f"3. **輸出格式**：Markdown 表格。\n"
-                f"4. 資料來源連結。\n"
-                f"回答語言：繁體中文。"
+                f"請執行：1. **適應症檢核**：若不符合，請列出建議替代用藥。\n"
+                f"2. **劑量計算**：若需調整，列出標準 vs 調整後劑量 (紅色粗體標示禁忌)。\n"
+                f"3. 輸出表格並附連結 (URL)。\n回答語言：繁體中文。"
             )
-            
             st.session_state.trigger_action = {
                 "type": "new_search",
                 "label": f"💊 查詢 [{target_drug}] 劑量資訊 (CrCl {crcl})",
@@ -191,12 +185,12 @@ with chat_placeholder:
             st.markdown(f"<div id='{msg['id']}'></div>", unsafe_allow_html=True)
         st.chat_message(msg["role"]).write(msg["content"])
 
-# --- 邏輯處理核心 ---
 final_label = ""
 final_query = ""
 scroll_target_id = None
 should_run_api = False
 
+# 處理 Trigger
 if "trigger_action" in st.session_state:
     action = st.session_state.trigger_action
     
@@ -207,7 +201,7 @@ if "trigger_action" in st.session_state:
         if existing_msg:
             scroll_target_id = target_id
         else:
-            # 恢復舊訊息
+            # 恢復舊訊息 (從記憶體 Session 讀取，非檔案)
             history_item = next((h for h in st.session_state.history if h.get("id") == target_id), None)
             if history_item and "response" in history_item:
                 st.session_state.messages.append({"role": "user", "content": history_item["label"], "id": target_id})
@@ -222,7 +216,7 @@ if "trigger_action" in st.session_state:
     
     del st.session_state.trigger_action
 
-# 執行 API
+# 執行查詢 (New Search)
 if should_run_api and final_query:
     new_id = get_new_id()
     scroll_target_id = new_id
@@ -234,53 +228,47 @@ if should_run_api and final_query:
         st.chat_message("user").write(final_label)
         
         with st.chat_message("assistant"):
-            cached_item = next((h for h in st.session_state.history if h["query"] == final_query and "response" in h), None)
+            st_callback = StreamlitCallbackHandler(st.container())
+            llm = ChatOpenAI(model_name="gpt-4o", temperature=0, openai_api_key=openai_api_key)
+            tools = [TavilySearchResults(tavily_api_key=tavily_api_key, max_results=5)]
             
-            if cached_item:
-                final_ans = cached_item["response"]
+            # --- System Prompt 優化 (防呆與糾錯) ---
+            system_prompt = (
+                "你是專業醫師助手 Dr. AI。\n"
+                "任務：搜尋最新醫學指引。\n"
+                "核心指令：\n"
+                "1. **身份確認**：回答的第一句話，必須明確指出你正在針對哪個疾病回答 (例如：「關於 **腹水 (Ascites)** 的...」)。\n"
+                "2. **拼字校正**：若使用者輸入的英文病名有誤，請自動修正為正確醫學術語再搜尋。\n"
+                "3. **國際化搜尋**：中文病名自動轉英文搜尋，回答用 **繁體中文**。\n"
+                "4. **醫學名詞**：優先用英文全名/縮寫 + 繁體中文解釋。\n"
+                "5. **連結強制**：**所有回答** (包含 PE, 診斷, 藥物) 都必須在文末附上資料來源網址 (Source URLs)。\n"
+                "6. **語言**：繁體中文。"
+            )
+            
+            prompt_template = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                ("user", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ])
+            
+            agent = create_openai_tools_agent(llm, tools, prompt_template)
+            executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+            
+            try:
+                # 這裡不使用任何 Cache，每次都重新執行 Agent
+                response = executor.invoke({"input": final_query}, {"callbacks": [st_callback]})
+                final_ans = response["output"]
                 st.write(final_ans)
-                st.caption("⚡️ (已讀取歷史快取)")
-                st.session_state.messages.append({"role": "assistant", "content": final_ans})
-                cached_item["id"] = new_id 
-            else:
-                st_callback = StreamlitCallbackHandler(st.container())
-                llm = ChatOpenAI(model_name="gpt-4o", temperature=0, openai_api_key=openai_api_key)
-                tools = [TavilySearchResults(tavily_api_key=tavily_api_key, max_results=5)]
                 
-                # --- System Prompt: 最終安全連結指令 (Safe Linking) ---
-                system_prompt = (
-                    "你是專業醫師助手 Dr. AI。\n"
-                    "核心指令：\n"
-                    "1. **國際化搜尋**：中文病名自動轉英文搜尋，回答用 **繁體中文**。\n"
-                    "2. **醫學名詞**：優先用英文全名/縮寫 + 繁體中文解釋 (避免簡體)。\n"
-                    "3. **藥名**：一律用 English Generic Name。\n"
-                    "4. **劑量**：精確數值。\n"
-                    "5. **連結策略**：\n"
-                    "   - MDCalc/Radiopaedia/LITFL：若不確定真實 URL，請提供 Google 搜尋 URL (例如: ) 以確保連結有效。\n"
-                    "   - 指引來源：務必附上 URL。\n"
-                )
-                
-                prompt_template = ChatPromptTemplate.from_messages([
-                    ("system", system_prompt),
-                    ("user", "{input}"),
-                    MessagesPlaceholder(variable_name="agent_scratchpad"),
-                ])
-                
-                agent = create_openai_tools_agent(llm, tools, prompt_template)
-                executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-                
-                try:
-                    response = executor.invoke({"input": final_query}, {"callbacks": [st_callback]})
-                    final_ans = response["output"]
-                    st.write(final_ans)
+                # 存入歷史 (僅 Session)
+                new_history_item = {"label": final_label, "query": final_query, "response": final_ans, "id": new_id}
+                # 簡單去重：如果和上一筆不同才加
+                if not st.session_state.history or st.session_state.history[-1]["query"] != final_query:
+                    st.session_state.history.append(new_history_item)
                     
-                    new_history_item = {"label": final_label, "query": final_query, "response": final_ans, "id": new_id}
-                    if not st.session_state.history or st.session_state.history[-1]["query"] != final_query:
-                        st.session_state.history.append(new_history_item)
-                        
-                    st.session_state.messages.append({"role": "assistant", "content": final_ans})
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                st.session_state.messages.append({"role": "assistant", "content": final_ans})
+            except Exception as e:
+                st.error(f"Error: {e}")
 
 # --- JavaScript 滑動邏輯 ---
 if scroll_target_id:
