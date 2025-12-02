@@ -1,5 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
+import json
+import os
 from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain.agents import AgentExecutor, create_openai_tools_agent
@@ -63,7 +65,7 @@ html {
 <a href="#top_anchor" class="float-btn" target="_self">▲</a>
 """, unsafe_allow_html=True)
 
-# --- 初始化 Session State (純記憶體模式，不讀檔) ---
+# --- 初始化 Session State ---
 if "messages" not in st.session_state: 
     st.session_state.messages = [{"role": "assistant", "content": "我是您的臨床助手。請輸入病名開始查詢。", "id": "init_msg"}]
 if "history" not in st.session_state: 
@@ -86,7 +88,6 @@ def handle_button_click(label_tmpl, query_tmpl):
     if not target_disease:
         st.warning("請先輸入病名 👆")
     else:
-        # 直接寫入 Trigger，不做任何 Cache 檢查，強制視為新搜尋
         st.session_state.trigger_action = {
             "type": "new_search",
             "label": label_tmpl.format(target_disease),
@@ -99,17 +100,17 @@ c1, c2, c3 = st.columns(3)
 
 with c1:
     if st.button("🩺 診斷 Guideline", use_container_width=True):
-        q = "請搜尋最新的 [{}] 診斷指引。\n請整理：1. **評分系統**：表格 + MDCalc 連結。2. **確診條件**。3. **資料來源**：附上 URL。\n回答語言：繁體中文。"
+        q = "請搜尋最新的 [{}] 診斷指引。\n請整理：1. **評分系統**：表格 + MDCalc 連結。2. **確診條件**。3. **資料來源**：附上具體相關的 URL (避免首頁)。\n回答語言：繁體中文。"
         handle_button_click("🔍 查詢 [{}] 診斷 Guideline", q)
 
 with c2:
     if st.button("🧪 實驗室檢查", use_container_width=True):
-        q = "請針對疑似 [{}] 的病人，列出建議安排的檢查項目 (Workup)。\n整理為：1. **血液/生化檢查**。2. **影像/ECG** (附 Radiopaedia/LITFL 連結)。\n3. **資料來源**：附上 URL。"
+        q = "請針對疑似 [{}] 的病人，列出建議安排的檢查項目 (Workup)。\n請務必將建議分為：\n1. **💉 抽血/檢驗項目 (Labs)**：具體項目與預期異常。\n2. **📸 儀器/影像檢查 (Imaging/Instrumental)**：X-ray, CT, Echo 等 (附 Radiopaedia 連結)。\n3. **資料來源**：附上 URL。"
         handle_button_click("🔬 查詢 [{}] 完整檢查建議", q)
 
 with c3:
     if st.button("💊 治療與目標", use_container_width=True):
-        q = "請搜尋最新的 [{}] 治療指引。\n整理出：1. **藥物治療清單**：English Generic Name、精確劑量、頻率。2. **急性期治療目標 (Goals)**：數值與時間窗。\n3. **資料來源**：附上 URL。\n回答語言：繁體中文。"
+        q = "請搜尋最新的 [{}] 治療指引。\n整理出：1. **藥物治療清單**：English Generic Name、精確劑量、頻率。2. **急性期治療目標 (Goals)**：數值與時間窗。\n3. **資料來源**：附上具體相關的 URL。\n回答語言：繁體中文。"
         handle_button_click("💊 查詢 [{}] 治療藥物與目標", q)
 
 # --- 第二排按鈕 ---
@@ -122,7 +123,7 @@ with c4:
 
 with c5:
     if st.button("✋ 身體理學檢查 (PE)", use_container_width=True):
-        q = "請針對疑似 [{}] 的病人，列出重點身體理學檢查 (Physical Examination)。\n請整理：\n1. **視診 (Inspection)**。\n2. **聽診/觸診 (Auscultation/Palpation)**。\n3. **特殊檢查 (Special Maneuvers)**：(e.g. Murphy's sign, McBurney's point)，並附上敏感度/特異度。\n4. **資料來源**：務必附上參考連結 (URL)。\n回答語言：繁體中文。"
+        q = "請針對疑似 [{}] 的病人，列出重點身體理學檢查 (Physical Examination)。\n請整理：\n1. **視診 (Inspection)**。\n2. **聽診/觸診 (Auscultation/Palpation)**。\n3. **特殊檢查 (Special Maneuvers)**：(e.g. Murphy's sign)，並附上敏感度/特異度。\n4. **資料來源**：務必附上參考連結 (URL)。\n回答語言：繁體中文。"
         handle_button_click("✋ 查詢 [{}] PE 重點", q)
 
 # ==========================================
@@ -175,6 +176,63 @@ with st.expander("💊 藥物劑量資訊 (Dosing Info)", expanded=False):
 st.divider()
 
 # ==========================================
+# 側邊欄 (Sidebar)
+# ==========================================
+with st.sidebar:
+    # --- 鑑別診斷助手 (DDx) ---
+    with st.expander("🕵️ 鑑別診斷 (DDx Helper)", expanded=True):
+        st.info("輸入症狀與數據，AI 幫您分析可能性。")
+        
+        symptoms = st.text_area("1. 主訴與症狀 (Symptoms)", height=100, placeholder="例如: 右下腹痛、轉移痛、發燒...")
+        labs = st.text_area("2. 異常檢驗/數據 (Labs/Vitals)", height=100, placeholder="例如: WBC 15000, CRP 10...")
+        
+        if st.button("🚀 分析鑑別診斷", use_container_width=True, type="primary"):
+            if not symptoms and not labs:
+                st.warning("請至少輸入症狀或數據！")
+            else:
+                # 組合 Prompt (v48.0 優化版：檢查分類 + 精準連結)
+                q = (
+                    f"請扮演資深內科醫師，進行鑑別診斷分析 (Differential Diagnosis)。\n"
+                    f"**病人資訊**：症狀 '{symptoms}'，數據 '{labs}'。\n\n"
+                    f"請執行以下思考流程：\n"
+                    f"1. **轉譯**：若輸入為中文，請先轉化為精確的 **英文醫學術語** 再進行分析。\n"
+                    f"2. **鑑別分析**：列出 3-5 個最可能的診斷 (依可能性排序)。\n"
+                    f"   - 診斷名稱：**English Name (中文名稱)**。\n"
+                    f"   - 支持/排除理由。\n"
+                    f"   - **建議檢查 (Suggested Workup)**：\n"
+                    f"     - **a. 💉 抽血/檢驗 (Labs)**：具體項目 (e.g. Lipase, Troponin)。\n"
+                    f"     - **b. 📸 儀器/影像 (Imaging/Instrumental)**：具體檢查 (e.g. CT Abdomen with contrast)。\n"
+                    f"3. **危險排除**：急症提醒。\n"
+                    f"4. **資料來源**：請附上 **高度相關且專一** 的參考網址 (Specific URL)，避免僅提供首頁。\n"
+                    f"回答語言：繁體中文。"
+                )
+                
+                st.session_state.trigger_action = {
+                    "type": "new_search",
+                    "label": "🕵️ 分析鑑別診斷 (DDx)",
+                    "query": q
+                }
+                st.rerun()
+
+    st.divider()
+
+    # --- 歷史紀錄 ---
+    st.header("🕒 歷史紀錄")
+    if st.button("🗑️ 清除紀錄", use_container_width=True):
+        st.session_state.history = []
+        st.session_state.messages = [{"role": "assistant", "content": "我是您的臨床助手。請輸入病名開始查詢。", "id": "init_msg"}]
+        st.session_state.msg_counter = 0 
+        st.rerun()
+    
+    for i, item in enumerate(reversed(st.session_state.history)):
+        if st.button(item["label"], key=f"hist_{i}"):
+            st.session_state.trigger_action = {
+                "type": "history_click",
+                "id": item.get("id")
+            }
+            st.rerun()
+
+# ==========================================
 # 💬 對話與結果區
 # ==========================================
 chat_placeholder = st.container() 
@@ -190,7 +248,6 @@ final_query = ""
 scroll_target_id = None
 should_run_api = False
 
-# 處理 Trigger
 if "trigger_action" in st.session_state:
     action = st.session_state.trigger_action
     
@@ -201,7 +258,7 @@ if "trigger_action" in st.session_state:
         if existing_msg:
             scroll_target_id = target_id
         else:
-            # 恢復舊訊息 (從記憶體 Session 讀取，非檔案)
+            # 恢復舊訊息
             history_item = next((h for h in st.session_state.history if h.get("id") == target_id), None)
             if history_item and "response" in history_item:
                 st.session_state.messages.append({"role": "user", "content": history_item["label"], "id": target_id})
@@ -232,17 +289,17 @@ if should_run_api and final_query:
             llm = ChatOpenAI(model_name="gpt-4o", temperature=0, openai_api_key=openai_api_key)
             tools = [TavilySearchResults(tavily_api_key=tavily_api_key, max_results=5)]
             
-            # --- System Prompt 優化 (防呆與糾錯) ---
+            # --- System Prompt (v48.0 Update: 分類檢查 + 精準連結) ---
             system_prompt = (
                 "你是專業醫師助手 Dr. AI。\n"
-                "任務：搜尋最新醫學指引。\n"
+                "任務：搜尋最新醫學指引並進行臨床推理。\n"
                 "核心指令：\n"
-                "1. **身份確認**：回答的第一句話，必須明確指出你正在針對哪個疾病回答 (例如：「關於 **腹水 (Ascites)** 的...」)。\n"
-                "2. **拼字校正**：若使用者輸入的英文病名有誤，請自動修正為正確醫學術語再搜尋。\n"
-                "3. **國際化搜尋**：中文病名自動轉英文搜尋，回答用 **繁體中文**。\n"
+                "1. **身份確認**：回答的第一句話，請明確指出你正在分析的主題。\n"
+                "2. **拼字校正**：自動修正輸入的醫學術語。\n"
+                "3. **國際化搜尋**：中文自動轉英文搜尋，回答用 **繁體中文**。\n"
                 "4. **醫學名詞**：優先用英文全名/縮寫 + 繁體中文解釋。\n"
-                "5. **連結強制**：**所有回答** (包含 PE, 診斷, 藥物) 都必須在文末附上資料來源網址 (Source URLs)。\n"
-                "6. **語言**：繁體中文。"
+                "5. **建議檢查 (Workup)**：若涉及檢查建議，請務必將其分為 **「💉 抽血/檢驗 (Labs)」** 與 **「📸 儀器/影像 (Imaging/Instrumental)」** 兩類列出。\n"
+                "6. **連結強制**：**所有回答** 務必附上資料來源網址 (Source URLs)，請優先提供**高度相關且專一**的頁面連結，避免通用首頁。\n"
             )
             
             prompt_template = ChatPromptTemplate.from_messages([
@@ -255,14 +312,12 @@ if should_run_api and final_query:
             executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
             
             try:
-                # 這裡不使用任何 Cache，每次都重新執行 Agent
                 response = executor.invoke({"input": final_query}, {"callbacks": [st_callback]})
                 final_ans = response["output"]
                 st.write(final_ans)
                 
-                # 存入歷史 (僅 Session)
+                # 存入歷史 (Session Only)
                 new_history_item = {"label": final_label, "query": final_query, "response": final_ans, "id": new_id}
-                # 簡單去重：如果和上一筆不同才加
                 if not st.session_state.history or st.session_state.history[-1]["query"] != final_query:
                     st.session_state.history.append(new_history_item)
                     
@@ -283,20 +338,3 @@ if scroll_target_id:
     </script>
     """
     components.html(js, height=0)
-
-# --- 側邊欄：歷史紀錄 ---
-with st.sidebar:
-    st.header("🕒 歷史紀錄")
-    if st.button("🗑️ 清除紀錄", use_container_width=True):
-        st.session_state.history = []
-        st.session_state.messages = [{"role": "assistant", "content": "我是您的臨床助手。", "id": "init_msg"}]
-        st.session_state.msg_counter = 0 
-        st.rerun()
-    
-    for i, item in enumerate(reversed(st.session_state.history)):
-        if st.button(item["label"], key=f"hist_{i}"):
-            st.session_state.trigger_action = {
-                "type": "history_click",
-                "id": item.get("id")
-            }
-            st.rerun()
